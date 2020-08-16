@@ -1,0 +1,369 @@
+---
+title: "MSDS 6306 Final Project - Attrition & Salary Modeling"
+author: "Bethel Kumsa"
+date: "8/05/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# **Introduction & Dataset**
+
+DDSAnalytics manages talent for fortune 500 companies. This analytics company is considering employing data science as a tool in servicing the company's clients.
+
+Through a dataset provided by DDSAnayltics, we model and predict attrition and monthly pay as means of introducing the company's leadership to the talent management solutions that may be leveraged through data science.
+
+Please watch the video presentation meant to accompany this analysis on [YouTube](https://www.youtube.com/watch?v=TVP0cFca9jM).
+
+Note: The loading of libraries is hidden from this RMD for ease of reading.
+
+```{r LoadingLibraries, include=FALSE}
+library(corrplot)
+library(ggplot2)
+library(tidyverse)
+library(reshape2)
+library(plotly)
+library(stringr)
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(GGally)
+library(pscl)
+library(dominanceanalysis)
+library(class)
+library(caret)
+library(e1071)
+library(C50)
+```
+
+
+# **Top 3 Factors Impacting Attrition**
+
+
+#### Step 1: Clean Up/Modifications
+
+We first load in our dataset. We then modify our nominal and ordinal variables and represnt their values as integers. Finally, we remove 3 columns, each of which contained one value for all data points.
+
+```{r CleanUp, include=TRUE}
+
+attData = read.csv("CaseStudy2-data.csv", header = TRUE)
+attDataNumeric = attData
+
+#Modify nominal and ordinal variables to be represented by integers.
+
+attDataNumeric$Attrition = ifelse(attDataNumeric$Attrition == "No",0,1)
+
+attDataNumeric$BusinessTravel = ifelse(attDataNumeric$BusinessTravel == "Non-Travel",0,
+                                ifelse(attDataNumeric$BusinessTravel == "Travel_Rarely",1,2))
+
+attDataNumeric$Department = ifelse(attDataNumeric$Department == "Human Resources",0,
+                                   ifelse(attDataNumeric$Department == "Research & Development",1,2))
+
+attDataNumeric$EducationField = ifelse(attDataNumeric$EducationField == "Other",0,
+                                   ifelse(attDataNumeric$EducationField == "Human Resources",1,
+                                          ifelse(attDataNumeric$EducationField == "Life Science",2,
+                                                 ifelse(attDataNumeric$EducationField == "Marketing",3,
+                                                        ifelse(attDataNumeric$EducationField == "Medical",4,5)))))
+
+attDataNumeric$Gender = ifelse(attDataNumeric$Gender == "Male",0,1)
+
+attDataNumeric$JobRole = ifelse(attDataNumeric$JobRole == "Healthcare Representative",0,
+                                       ifelse(attDataNumeric$JobRole == "Human Resources",1,
+                                              ifelse(attDataNumeric$JobRole == "Laboratory Technician",2,
+                                                     ifelse(attDataNumeric$JobRole == "Manager",3,
+                                                            ifelse(attDataNumeric$JobRole == "Manufacturing Director",4,
+                                                                   ifelse(attDataNumeric$JobRole == "Research Director",5,
+                                                                          ifelse(attDataNumeric$JobRole == "Research Scientist",6,
+                                                                                 ifelse(attDataNumeric$JobRole == "Sales Executive",7,8))))))))
+
+attDataNumeric$MaritalStatus = ifelse(attDataNumeric$MaritalStatus == "Single",0,
+                                       ifelse(attDataNumeric$MaritalStatus == "Married",1,2))
+
+attDataNumeric$OverTime = ifelse(attDataNumeric$OverTime == "No",0,1)
+
+#Remove columns containing variables with only one value in preparation for logistic regression.
+attDataNumeric = select(attDataNumeric, -c(EmployeeCount,Over18,StandardHours))
+```
+
+#### Step 2: Logistic Regression & ANOVA
+
+
+**All Variables Containing 2 or More Values: ** We fit a logistic regression model for attrition against the modified, cleaned dataset. We then review the p-values found in the model's summary to determine which variables are statistically significant. We run ANOVA against this model and compare the residual deviance explained by each variable. 
+
+Note: The larger the deviance explained by the addition of a variable, the more impactful that variable is in determining attrition.
+
+**Variables Determined as Statistical Significant Through First GLM: ** Again, we fit a logistic regression model for attrition against  only attrition and the explanatory variables determined as statistically significant in the previous model. Again, we run ANOVA against this model and compare the residual deviance explained by each variable. 
+
+**Variables Determined as Most Important Factors: ** We fit a third logistic regression model for attrition against the top 6 contributors to attrition as determined by the first two models. Again, we run ANOVA against this model and compare the residual deviance explained by each variable. 
+
+**Top 3 Explanatory Variables Predicting Attrition: ** We determine and graph, the conditional and general dominance of each of the 6 top explanatory variables predicting attrition using the dominanceanalysis library. In this way, we determine overtime, marital status, and total years working as the top 3 factors contributing to attrition.
+
+**Correlation Heatmap: ** We creating a correlation heatmap for each of the explanatory variables to further visualize the relationships between attrition and the explanatory variables as well as the relationships between the explanatory variables.
+
+**Note: ** Summaries of GLM outputs are commented out for an easier read.
+
+```{r DevianceExplained, echo=TRUE}
+
+#First GLM
+fitAttrition <- glm(Attrition~., data=attDataNumeric, family=binomial(link='logit'))
+#summary(fitAttrition) 
+anovaAttrition = anova(fitAttrition, test="Chisq")
+
+#Second GLM
+fitAttritionSig <- glm(Attrition~BusinessTravel+Department+DistanceFromHome+EnvironmentSatisfaction+JobInvolvement+
+                         JobSatisfaction+MaritalStatus+NumCompaniesWorked+OverTime+RelationshipSatisfaction+TotalWorkingYears+
+                         TrainingTimesLastYear+WorkLifeBalance+YearsInCurrentRole+YearsSinceLastPromotion+YearsWithCurrManager, 
+                       data=attDataNumeric, family=binomial(link='logit'))
+#summary(fitAttritionSig)
+anovaAttritionSig = anova(fitAttritionSig, test="Chisq")
+
+#Third GLM
+fitAttritionTopFactors <- glm(Attrition~OverTime+JobInvolvement+MaritalStatus+TotalWorkingYears+YearsSinceLastPromotion+JobSatisfaction,
+                       data=attDataNumeric, family=binomial(link='logit'))
+#summary(fitAttritionTopFactors)
+anovaAttritionTopFactors = anova(fitAttritionTopFactors, test="Chisq")
+
+#Creating columns to store deviance explained by each variable.
+anovaAttrition$devianceExplained[1] = 0
+anovaAttritionSig$devianceExplained[1] = 0
+anovaAttritionTopFactors$devianceExplained[1] = 0
+
+#Determining deviance explained by each variable.
+for(i in 2:length(anovaAttritionSig$`Resid. Dev`)-1) 
+{
+  anovaAttritionSig$devianceExplained[i+1] = anovaAttritionSig$`Resid. Dev`[i] - anovaAttritionSig$`Resid. Dev`[i+1]
+}
+
+
+for(i in 2:length(anovaAttrition$`Resid. Dev`)-1) 
+{
+  anovaAttrition$devianceExplained[i+1] = anovaAttrition$`Resid. Dev`[i] - anovaAttrition$`Resid. Dev`[i+1]
+}
+
+
+for(i in 2:length(anovaAttritionTopFactors$`Resid. Dev`)-1) 
+{
+  anovaAttritionTopFactors$devianceExplained[i+1] = anovaAttritionTopFactors$`Resid. Dev`[i] - anovaAttritionTopFactors$`Resid. Dev`[i+1]
+}
+
+#Sorting by deviance explained - ascending.
+anovaAttrition = anovaAttrition[order(-anovaAttrition$devianceExplained),] 
+anovaAttritionSig = anovaAttritionSig[order(-anovaAttritionSig$devianceExplained),] 
+anovaAttritionTopFactors = anovaAttritionTopFactors[order(-anovaAttritionTopFactors$devianceExplained),] 
+
+anovaAttrition
+anovaAttritionSig 
+anovaAttritionTopFactors
+
+domAnalysisAttrition<-dominanceAnalysis(fitAttritionTopFactors)
+plot(domAnalysisAttrition, which.graph ="conditional",fit.function = "r2.m")
+plot(domAnalysisAttrition, which.graph ="general",fit.function = "r2.m")
+
+#Correlation Heatmap
+corrHeatMap = cor(attDataNumeric[c(2:33)], method = "pearson")
+corrplot(corrHeatMap, tl.col = "black", order = "hclust", hclust.method = "average", addrect = 4, tl.cex = 0.7)
+```
+
+# **Classification Models for Attrition**
+
+
+#### The k-NN Model Achieved the lowest specificities, reaching as low as 0%
+#### The basic tree (C5.0) model achived a wide range of specificities typically between 30% and 85%.
+#### The logistic regression model achieved the highest speficities typically between 60% and 85%
+
+**Note: ** Summaries of classifications outputs are commented out for an easier read.
+
+```{r ClassificationModels, include=TRUE}
+
+splitPerc = 0.7
+
+# Knn Model for Attrition Classification
+
+trainAttritionIndicies = sample(1:dim(attData)[1],round(splitPerc * dim(attData)[1]))
+
+trainAttritionKnn = na.omit(attDataNumeric[trainAttritionIndicies,])
+testAttritionKnn = na.omit(attDataNumeric[-trainAttritionIndicies,])
+confusionMatrix(table(knn(trainAttritionKnn[,c(18,22,27)],testAttritionKnn[,c(18,22,27)],trainAttritionKnn[,3], k=3),testAttritionKnn[,3]))
+
+
+# Logistic Regression Model and Basic Tree Model Test and Train Sets
+
+trainAttritionGLM = na.omit(attData[trainAttritionIndicies,])
+trainAttritionGLM = select(trainAttritionGLM,Attrition,OverTime,JobInvolvement,MaritalStatus,TotalWorkingYears,BusinessTravel,JobRole)
+trainAttritionTree = trainAttritionGLM
+trainAttritionGLM$Attrition = ifelse(trainAttritionGLM$Attrition == "No",0,1)
+
+testAttritionGLM = na.omit(attData[-trainAttritionIndicies,])
+testAttritionGLM = select(testAttritionGLM,Attrition,OverTime,JobInvolvement,MaritalStatus,TotalWorkingYears,BusinessTravel,JobRole)
+testAttritionTree = testAttritionGLM
+testAttritionGLM$Attrition = ifelse(testAttritionGLM$Attrition == "No",0,1)
+
+
+#Basic Tree Model
+
+treeModel = C5.0(x = trainAttritionTree[2:7], y = trainAttritionTree$Attrition)
+#summary(treeModel)
+plot(treeModel)
+predAttritionTree = predict(treeModel, newdata = testAttritionTree[2:7])
+confusionMatrix(table(testAttritionTree$Attrition,predAttritionTree))
+
+
+#Logistic Regression Model
+
+modelAttritionLog <- glm(formula = Attrition~., family=binomial(link='logit'), data=trainAttritionGLM)
+#summary(modelAttritionLog)
+predAttrition <- predict(modelAttritionLog,testAttritionGLM, type = 'response')
+predAttrition <- ifelse(predAttrition>0.5,1,0)
+modelAttritionAccuracy = 1-(mean(predAttrition != testAttritionGLM$Attrition))
+confusionMatrix(table(testAttritionGLM$Attrition,predAttrition))
+
+```
+
+# **Predictive Model for Monthly Income**
+
+
+**Clean Data: ** We create a new dataframe including only **numeric** explanatory variables.
+
+**Standardize Data: ** We use scale to standardize data.
+
+**Determine Most Impactful Explanatory Variables: ** We fit a linear regression model against monthly income for the dataset of unscaled and scaled data. The **standardized/scaled** data allows us to compare the coefficients rendered by the linear regression model to determine which explanatory variables are most impactful in predicting monthly income. We determine job level, total working years, percent salary hike, and job involvement as the most predictive explanatory variables for monthly income and use these variables in our final linear regression prediction model.
+
+**RMSE: ** Typically ranged between 1,300 dollars and 1,600 dollars.
+
+```{r PredictiveModels, include=TRUE}
+
+splitPerc = 0.7
+
+# Model for Salary Prediction
+
+#Remove columns containing non-numeric variables with only one value in preparation for logistic regression.
+salaryDataNumeric = attData[c(2,5,7,8,12,14,15,16,18,20,21,22,25:27,29:36)]
+
+#Standardize the data.
+salaryDataNumericScaled= as.data.frame(scale(salaryDataNumeric))
+
+fitUnsacaled = lm(MonthlyIncome~., data = salaryDataNumeric)
+fitScaled = lm(MonthlyIncome~., data = salaryDataNumericScaled)
+
+#summary(fitScaled)
+#summary(fitUnsacaled)
+
+#Use the scaled, ordered coefficients derived from the lm output to determine the most impactful factors in predicting monthly income.
+scaledCoefficients = fitScaled$coefficients
+scaledCoefficients = data.frame(ScaledVariable = names(scaledCoefficients), CoefficientValues = unname(scaledCoefficients))
+scaledCoefficients = scaledCoefficients[order(-scaledCoefficients$CoefficientValues),] 
+
+#Trainig and test sets for linear regression model.
+trainSalaryIndicies = sample(1:dim(attData)[1],round(splitPerc * dim(attData)[1]))
+trainSalary = attData[trainSalaryIndicies,]
+testSalary = attData[-trainSalaryIndicies,]
+
+#Linear regression model to predict monthly income based on most impactful factors.
+fitSalary = lm(MonthlyIncome~JobLevel+TotalWorkingYears+PercentSalaryHike+JobInvolvement, data = trainSalary)
+summary(fitSalary)
+#confint(fitSalary)
+
+predictedSalary = predict(fitSalary, newdata = testSalary)
+
+#Cross-Validation
+MSPE = data.frame(Observed = testSalary$MonthlyIncome, Predicted = predictedSalary)
+MSPE$Resisdual = MSPE$Observed - MSPE$Predicted
+MSPE$SquaredResidual = MSPE$Resisdual^2
+mean(MSPE$SquaredResidual)
+
+```
+
+# **Models Against Provided Incomplete Datasets**
+
+
+**Predicted Classifications: ** A dataset not including attrition was provided for analysis. The predicted attrition classifications for this dataset are printed below and may be found in accompanying CSV file titled *Case2PredictionsKumsa Attrition.csv* in this repository.
+
+**Predicted Monthly Incomes: ** A dataset not including monthly incomes was provided for analysis. The predicted monthly income predictions for this dataset are printed below and may be found in accompanying CSV file titled *Case2PredictionsKumsa Salary.csv* in this repository.
+
+
+```{r IncompleteDatasetAnalysis, include=TRUE}
+
+#Attrition
+
+incompleteAttID = read.csv("CaseStudy2CompSet_No Attrition.csv", header = TRUE)
+incompleteAtt = select(incompleteAttID,OverTime,JobInvolvement,MaritalStatus,Department,BusinessTravel,JobRole)
+trainAttritionGLMFinaL = na.omit(attData)
+trainAttritionGLMFinaL = select(trainAttritionGLMFinaL,Attrition,OverTime,JobInvolvement,MaritalStatus,Department,BusinessTravel,JobRole)
+trainAttritionGLMFinaL$Attrition = ifelse(trainAttritionGLMFinaL$Attrition == "No",0,1)
+
+modelAttritionGLMFinal <- glm(formula = Attrition~., family=binomial(link='logit'), data=trainAttritionGLMFinaL)
+#summary(modelAttritionGLMFinal)
+predAttritionFinal = predict(modelAttritionGLMFinal,incompleteAtt, type = 'response')
+predAttritionFinal = ifelse(predAttritionFinal>0.5,1,0)
+predAttritionFinal = ifelse(predAttritionFinal == 0,"No","Yes")
+predAttritionFinalDF = data.frame(ID = incompleteAttID$ID, Attrition = unname(predAttritionFinal)) 
+write.csv(predAttritionFinalDF,'Case2PredictionsKumsa Attrition.csv',row.names=FALSE)
+
+#Monthly Income
+
+incompleteSalary = read.csv("CaseStudy2CompSet_No Salary.csv", header = TRUE)
+trainSalaryFinal = na.omit(attData)
+
+#Linear regression model to predict monthly income based on most impactful factors.
+fitSalaryFinal = lm(MonthlyIncome~JobLevel+TotalWorkingYears+PercentSalaryHike+JobInvolvement, data = trainSalaryFinal)
+#summary(fitSalaryFinal)
+
+predictedSalaryFinal = predict(fitSalaryFinal, newdata = incompleteSalary)
+predSalaryFinalDF = data.frame(ID = incompleteSalary$ID, MonthlyIncome = predictedSalaryFinal) 
+write.csv(predSalaryFinalDF,'Case2PredictionsKumsa Salary.csv',row.names=FALSE)
+
+```
+
+# **Job Role Specific Trends & Other Insights**
+
+
+**Job Role Specific Trends: ** Healthcare representatives maintain longes careers at DDS Analytics with a majority of their working years spent at this company. Very few human resources personnel remain at the company after the 10th year mark. DDSAnalytics typically hires research directors with about 20 years of experience.
+
+**Other Insights: ** For a majority of job roles, there is a higher rate of attrition for those working overtime than amongst those not working overtime.
+
+
+```{r JobRoleTrendsOtherInsights, include=TRUE}
+
+ggplot(data = attData, mapping = aes(x=YearsAtCompany, y = Age, color = JobRole)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~JobRole) +
+  theme(legend.title=element_blank()) +
+  ggtitle("Age vs Years at Company by Job Role") +
+  xlab("Years at Company") + ylab("Age")
+
+ggplot(data = attData, mapping = aes(x=YearsAtCompany, y = TotalWorkingYears, color = JobRole)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~JobRole) +
+  theme(legend.title=element_blank()) +
+  ggtitle("Total Working Years vs Years at Company by Job Role") +
+  xlab("Years at Company") + ylab("Total Working Years") +
+  xlim(-5, 50) + ylim(-5,50)
+
+attData2 <- attData %>% 
+  group_by(JobRole,OverTime,Attrition) %>% 
+  summarise(count=n()) %>% 
+  mutate(perc=count/sum(count))
+
+ggplot(data = attData, mapping = aes(x= JobRole, fill = Attrition)) +
+  geom_bar() +
+  facet_grid(OverTime~.) +
+  ggtitle("Overtime vs Job Role and Attrition") +
+  xlab("Overtime") + ylab("Number of Employees")
+
+ggplot(data = attData, mapping = aes(x= "", y= Gender, fill = Gender)) +
+  geom_bar(width = 1, stat = "identity") + coord_polar("y", start=0) +
+  theme(axis.text.x = element_blank(), axis.ticks = element_blank()) +
+  xlab("") + ylab("") + ggtitle("Gender Represented in Dataset")
+
+ggplot(data = attData, mapping = aes(x= "", y= JobRole, fill = JobRole)) +
+  geom_bar(width = 1, stat = "identity") + coord_polar("y", start=0) +
+  theme(axis.text.x = element_blank(), axis.ticks = element_blank()) +
+  xlab("") + ylab("") + ggtitle("Job Roles Represented in Dataset")
+
+
+```
